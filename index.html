@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1115">
+<title>Bike Ride</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --line: #262a33; --text: #eef0f4;
+    --muted: #8a91a0; --accent: #3ddc97; --warn: #ffb547; --danger: #ff5d5d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  body { padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  .status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  button { font: inherit; border: 0; border-radius: 12px; padding: 12px 16px; background: var(--panel);
+    color: var(--text); border: 1px solid var(--line); cursor: pointer; }
+  button.primary { background: var(--accent); color: #062014; border-color: transparent; font-weight: 700; }
+  button.danger { background: var(--danger); color: #fff; border-color: transparent; font-weight: 700; }
+  button:disabled { opacity: .4; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > button { flex: 1 1 0; min-width: 0; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+  .tile .label { font-size: 12px; color: var(--muted); }
+  .tile .value { font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 4px; }
+  .tile .unit { font-size: 14px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+  .tile.big { grid-column: span 2; text-align: center; }
+  .tile.big .value { font-size: 56px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-top: 12px; }
+  section h2 { font-size: 15px; margin: 0 0 10px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .notice { background: #2a2110; border: 1px solid #5a4316; color: var(--warn); border-radius: 12px; padding: 12px; font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+  pre.log { background: #0b0d11; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 11px;
+    max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 8px 0 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  td, th { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+  td:first-child, th:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  .resist { display: flex; align-items: center; gap: 10px; }
+  .resist .lv { font-size: 28px; font-weight: 700; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+  details summary { cursor: pointer; font-size: 15px; font-weight: 600; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚴 Bike Ride</h1>
+  <div class="status"><span id="dot" class="dot"></span><span id="statusText">연결 안 됨</span></div>
+</header>
+
+<div id="noBt" class="notice hidden">
+  이 브라우저는 Web Bluetooth를 지원하지 않습니다.<br>
+  아이폰에서는 App Store의 <b>Bluefy – Web BLE Browser</b> 앱으로 이 페이지를 열어주세요.
+  (안드로이드/PC는 Chrome·Edge에서 동작)
+</div>
+
+<div class="row">
+  <button id="btnConnect" class="primary">자전거 연결</button>
+  <button id="btnDisconnect" disabled>연결 해제</button>
+</div>
+
+<div class="grid">
+  <div class="tile big"><div class="label">운동 시간</div><div class="value" id="vTime">00:00</div></div>
+  <div class="tile"><div class="label">속도</div><div class="value"><span id="vSpeed">–</span><span class="unit">km/h</span></div></div>
+  <div class="tile"><div class="label">케이던스</div><div class="value"><span id="vCad">–</span><span class="unit">rpm</span></div></div>
+  <div class="tile"><div class="label">파워</div><div class="value"><span id="vPower">–</span><span class="unit">W</span></div></div>
+  <div class="tile"><div class="label">심박</div><div class="value"><span id="vHr">–</span><span class="unit">bpm</span></div></div>
+  <div class="tile"><div class="label">거리</div><div class="value"><span id="vDist">0.00</span><span class="unit">km</span></div></div>
+  <div class="tile"><div class="label">칼로리</div><div class="value"><span id="vKcal">0</span><span class="unit">kcal</span></div></div>
+</div>
+
+<div class="row">
+  <button id="btnStart" class="primary">운동 시작</button>
+  <button id="btnPause" disabled>일시정지</button>
+  <button id="btnFinish" class="danger" disabled>종료·저장</button>
+</div>
+
+<section id="resistBox" class="hidden">
+  <h2>저항 조절</h2>
+  <div class="resist">
+    <button id="rDown">−</button>
+    <div class="lv" id="rLevel">–</div>
+    <button id="rUp">+</button>
+    <span class="muted" id="rRange"></span>
+  </div>
+</section>
+
+<section>
+  <h2>운동 기록</h2>
+  <div id="historyEmpty" class="muted">아직 기록이 없습니다.</div>
+  <table id="historyTable" class="hidden">
+    <thead><tr><th>날짜</th><th>시간</th><th>거리</th><th>평균속도</th><th>kcal</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="row" style="margin-top:10px">
+    <button id="btnCsv">CSV 내보내기</button>
+  </div>
+</section>
+
+<section>
+  <details id="dbg">
+    <summary>개발자 / 기기 탐색</summary>
+    <p class="muted">연결된 기기의 서비스·특성 목록과 수신 데이터(hex)를 보여줍니다.
+      자전거가 표준(FTMS) 방식이 아니면 이 로그를 복사해서 보내주세요.</p>
+    <div class="row">
+      <button id="btnCopyLog">로그 복사</button>
+      <button id="btnClearLog">로그 지우기</button>
+    </div>
+    <pre class="log" id="log"></pre>
+  </details>
+</section>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- BLE UUIDs ----------
+  const U = (n) => (typeof n === 'number' ? BluetoothUUID.canonicalUUID(n) : n);
+  const SVC = {
+    FTMS: 0x1826, CSC: 0x1816, CPS: 0x1818, HR: 0x180d, DIS: 0x180a, BAT: 0x180f,
+  };
+  const CHR = {
+    INDOOR_BIKE: 0x2ad2, FTMS_CP: 0x2ad9, FTMS_STATUS: 0x2ada, RES_RANGE: 0x2ad6,
+    CSC_MEAS: 0x2a5b, CP_MEAS: 0x2a63, HR_MEAS: 0x2a37,
+  };
+  // Common vendor services on Chinese fitness equipment (FitShow etc.), Nordic UART, ISSC, HM-10...
+  const VENDOR_SVCS = [
+    0xfff0, 0xffe0, 0xfee7, 0xfe00, 0xfff1, 0xffc0, 0xfd00,
+    '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+    '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+    '0000fff0-0000-1000-8000-00805f9b34fb',
+  ];
+  const OPTIONAL = [SVC.FTMS, SVC.CSC, SVC.CPS, SVC.HR, SVC.DIS, SVC.BAT, ...VENDOR_SVCS];
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const logEl = $('log');
+  function log(msg) {
+    const t = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+    logEl.textContent += `[${t}] ${msg}\n`;
+    if (logEl.textContent.length > 60000) logEl.textContent = logEl.textContent.slice(-40000);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  const hex = (dv) => [...new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)]
+    .map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  const shortUuid = (u) => /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/.test(u) ? '0x' + u.slice(4, 8) : u;
+
+  // ---------- State ----------
+  const live = { speed: null, cadence: null, power: null, hr: null, resistance: null,
+    deviceDistance: null, deviceKcal: null };
+  const ride = { state: 'idle', elapsed: 0, lastTick: 0, distance: 0, kcal: 0, speedSum: 0, speedN: 0,
+    distBase: null, kcalBase: null, samples: [] };
+  let device = null, server = null, ftmsCP = null, resRange = null, hasFtms = false;
+  let csc = { crankRevs: null, crankTime: null, wheelRevs: null, wheelTime: null, lastCrankAt: 0 };
+  let wakeLock = null;
+
+  if (!('bluetooth' in navigator)) {
+    $('noBt').classList.remove('hidden');
+    $('btnConnect').disabled = true;
+  }
+
+  // ---------- Connect ----------
+  $('btnConnect').onclick = async () => {
+    try {
+      setStatus('기기 검색 중…');
+      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OPTIONAL });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      log(`선택: ${device.name || '(이름 없음)'} id=${device.id}`);
+      await connect();
+    } catch (e) {
+      log('연결 실패: ' + e.message);
+      setStatus('연결 안 됨');
+    }
+  };
+  $('btnDisconnect').onclick = () => { if (device?.gatt.connected) device.gatt.disconnect(); };
+
+  async function connect() {
+    setStatus('연결 중…');
+    server = await device.gatt.connect();
+    setStatus(device.name || '연결됨', true);
+    $('btnDisconnect').disabled = false;
+    $('btnConnect').disabled = true;
+
+    const services = await server.getPrimaryServices().catch(() => []);
+    log(`서비스 ${services.length}개 발견`);
+    hasFtms = false;
+    for (const s of services) {
+      log(`▸ 서비스 ${shortUuid(s.uuid)}`);
+      let chars = [];
+      try { chars = await s.getCharacteristics(); } catch (e) { log('  특성 읽기 실패: ' + e.message); }
+      for (const c of chars) {
+        const p = c.properties;
+        const props = ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter((k) => p[k]).join(',');
+        log(`   - ${shortUuid(c.uuid)} [${props}]`);
+        await hookCharacteristic(s, c);
+      }
+    }
+    if (!hasFtms) log('⚠ FTMS(0x1826) 서비스 없음 — 표준 방식이 아닐 수 있습니다. 위 로그를 확인하세요.');
+  }
+
+  async function hookCharacteristic(s, c) {
+    const su = s.uuid, cu = c.uuid, p = c.properties;
+    const is = (svc, chr) => su === U(svc) && cu === U(chr);
+
+    if (p.read && (su === U(SVC.DIS) || su === U(SVC.BAT) || is(SVC.FTMS, CHR.RES_RANGE))) {
+      try {
+        const v = await c.readValue();
+        if (is(SVC.FTMS, CHR.RES_RANGE)) {
+          resRange = { min: v.getInt16(0, true) / 10, max: v.getInt16(2, true) / 10, step: Math.max(v.getUint16(4, true) / 10, 1) };
+          $('rRange').textContent = `범위 ${resRange.min}–${resRange.max}`;
+          log(`   저항 범위 ${JSON.stringify(resRange)}`);
+        } else {
+          const txt = new TextDecoder().decode(v).replace(/[^\x20-\x7e가-힣]/g, '');
+          log(`   = ${hex(v)} ${txt ? `"${txt}"` : ''}`);
+        }
+      } catch {}
+    }
+
+    if (is(SVC.FTMS, CHR.FTMS_CP)) {
+      ftmsCP = c;
+      if (p.indicate || p.notify) {
+        c.addEventListener('characteristicvaluechanged', (e) => log(`FTMS CP 응답 ${hex(e.target.value)}`));
+        await c.startNotifications().catch(() => {});
+      }
+      $('resistBox').classList.remove('hidden');
+      // Request control so resistance commands are accepted
+      await writeCP([0x00]);
+      return;
+    }
+
+    if (!(p.notify || p.indicate)) return;
+    let handler = null;
+    if (is(SVC.FTMS, CHR.INDOOR_BIKE)) { hasFtms = true; handler = parseIndoorBike; }
+    else if (is(SVC.CSC, CHR.CSC_MEAS)) handler = parseCSC;
+    else if (is(SVC.CPS, CHR.CP_MEAS)) handler = parseCyclingPower;
+    else if (is(SVC.HR, CHR.HR_MEAS)) handler = parseHR;
+    else if (is(SVC.FTMS, CHR.FTMS_STATUS)) handler = (dv) => log(`FTMS 상태 ${hex(dv)}`);
+
+    const tag = shortUuid(cu);
+    c.addEventListener('characteristicvaluechanged', (e) => {
+      const dv = e.target.value;
+      if (handler) { try { handler(dv); } catch (err) { log(`파싱 오류 ${tag}: ${err.message}`); } }
+      if (!handler || $('dbg').open) log(`${tag} ⇐ ${hex(dv)}`);
+    });
+    try { await c.startNotifications(); log(`   구독 시작 ${tag}`); }
+    catch (e) { log(`   구독 실패 ${tag}: ${e.message}`); }
+  }
+
+  function onDisconnected() {
+    log('연결 끊김');
+    setStatus('연결 끊김 – 재연결 시도…');
+    $('btnDisconnect').disabled = true;
+    ftmsCP = null;
+    Object.assign(live, { speed: null, cadence: null, power: null });
+    render();
+    // Auto-reconnect a few times
+    let tries = 0;
+    const retry = async () => {
+      if (!device || device.gatt.connected) return;
+      try { await connect(); }
+      catch { if (++tries < 5) setTimeout(retry, 2000 * tries); else { setStatus('연결 안 됨'); $('btnConnect').disabled = false; } }
+    };
+    setTimeout(retry, 1000);
+  }
+
+  function setStatus(text, on = false) {
+    $('statusText').textContent = text;
+    $('dot').classList.toggle('on', on);
+  }
+
+  // ---------- Parsers ----------
+  // FTMS Indoor Bike Data (0x2AD2)
+  function parseIndoorBike(dv) {
+    let o = 0;
+    const flags = dv.getUint16(o, true); o += 2;
+    const f = (b) => (flags >> b) & 1;
+    if (!f(0)) { live.speed = dv.getUint16(o, true) / 100; o += 2; }   // instantaneous speed
+    if (f(1)) o += 2;                                                  // average speed
+    if (f(2)) { live.cadence = dv.getUint16(o, true) / 2; o += 2; }   // instantaneous cadence
+    if (f(3)) o += 2;                                                  // average cadence
+    if (f(4)) { live.deviceDistance = dv.getUint16(o, true) | (dv.getUint8(o + 2) << 16); o += 3; }
+    if (f(5)) { live.resistance = dv.getInt16(o, true); o += 2; }
+    if (f(6)) { live.power = dv.getInt16(o, true); o += 2; }
+    if (f(7)) o += 2;                                                  // average power
+    if (f(8)) { const k = dv.getUint16(o, true); if (k !== 0xffff) live.deviceKcal = k; o += 5; }
+    if (f(9)) { const h = dv.getUint8(o); if (h) live.hr = h; o += 1; }
+    render();
+  }
+
+  // Cycling Speed & Cadence (0x2A5B)
+  function parseCSC(dv) {
+    let o = 0;
+    const flags = dv.getUint8(o); o += 1;
+    if (flags & 1) {
+      const revs = dv.getUint32(o, true), t = dv.getUint16(o + 4, true); o += 6;
+      if (csc.wheelRevs !== null) {
+        const dr = (revs - csc.wheelRevs) >>> 0, dt = ((t - csc.wheelTime) & 0xffff) / 1024;
+        if (dt > 0) live.speed = (dr * 2.105 / dt) * 3.6; // 700x25c 둘레 가정
+      }
+      csc.wheelRevs = revs; csc.wheelTime = t;
+    }
+    if (flags & 2) {
+      const revs = dv.getUint16(o, true), t = dv.getUint16(o + 2, true);
+      if (csc.crankRevs !== null) {
+        const dr = (revs - csc.crankRevs) & 0xffff, dt = ((t - csc.crankTime) & 0xffff) / 1024;
+        if (dt > 0 && dr > 0) { live.cadence = (dr / dt) * 60; csc.lastCrankAt = Date.now(); }
+        else if (Date.now() - csc.lastCrankAt > 3000) live.cadence = 0;
+      }
+      csc.crankRevs = revs; csc.crankTime = t;
+    }
+    render();
+  }
+
+  // Cycling Power Measurement (0x2A63)
+  function parseCyclingPower(dv) {
+    live.power = dv.getInt16(2, true);
+    render();
+  }
+
+  // Heart Rate Measurement (0x2A37)
+  function parseHR(dv) {
+    const flags = dv.getUint8(0);
+    live.hr = (flags & 1) ? dv.getUint16(1, true) : dv.getUint8(1);
+    render();
+  }
+
+  // ---------- FTMS control ----------
+  async function writeCP(bytes) {
+    if (!ftmsCP) return;
+    try {
+      const data = new Uint8Array(bytes);
+      if (ftmsCP.properties.write) await ftmsCP.writeValueWithResponse(data);
+      else await ftmsCP.writeValueWithoutResponse(data);
+      log(`FTMS CP ⇒ ${[...data].map((b) => b.toString(16).padStart(2, '0')).join(' ')}`);
+    } catch (e) { log('FTMS CP 쓰기 실패: ' + e.message); }
+  }
+  async function setResistance(level) {
+    if (resRange) level = Math.min(resRange.max, Math.max(resRange.min, level));
+    level = Math.max(0, level);
+    live.resistance = level;
+    render();
+    // Set Target Resistance Level (0x04), UINT8, resolution 0.1
+    await writeCP([0x04, Math.min(255, Math.round(level * 10))]);
+  }
+  $('rUp').onclick = () => setResistance((live.resistance ?? 0) + (resRange?.step || 1));
+  $('rDown').onclick = () => setResistance((live.resistance ?? 0) - (resRange?.step || 1));
+
+  // ---------- Ride ----------
+  $('btnStart').onclick = () => {
+    if (ride.state === 'idle') resetRide();
+    ride.state = 'running';
+    ride.lastTick = performance.now();
+    writeCP([0x07]);
+    requestWakeLock();
+    syncButtons();
+  };
+  $('btnPause').onclick = () => {
+    ride.state = 'paused';
+    writeCP([0x08, 0x02]);
+    syncButtons();
+  };
+  $('btnFinish').onclick = () => {
+    if (ride.elapsed >= 10) { if (!confirm('운동을 종료하고 저장할까요?')) return; saveRide(); }
+    else if (!confirm('10초 미만이라 저장되지 않습니다. 종료할까요?')) return;
+    writeCP([0x08, 0x01]);
+    ride.state = 'idle';
+    releaseWakeLock();
+    syncButtons();
+  };
+
+  function resetRide() {
+    Object.assign(ride, { elapsed: 0, distance: 0, kcal: 0, speedSum: 0, speedN: 0,
+      distBase: live.deviceDistance, kcalBase: live.deviceKcal, samples: [] });
+  }
+
+  function syncButtons() {
+    const s = ride.state;
+    $('btnStart').disabled = s === 'running';
+    $('btnStart').textContent = s === 'paused' ? '계속' : '운동 시작';
+    $('btnPause').disabled = s !== 'running';
+    $('btnFinish').disabled = s === 'idle';
+  }
+
+  // 1Hz integration loop
+  setInterval(() => {
+    if (ride.state !== 'running') return;
+    const now = performance.now();
+    const dt = (now - ride.lastTick) / 1000;
+    ride.lastTick = now;
+    ride.elapsed += dt;
+
+    const spd = live.speed ?? 0;
+    // Prefer device-reported totals when available; else integrate.
+    if (live.deviceDistance != null && ride.distBase != null) ride.distance = Math.max(0, live.deviceDistance - ride.distBase);
+    else ride.distance += (spd / 3.6) * dt;
+    if (live.deviceKcal != null && ride.kcalBase != null) ride.kcal = Math.max(0, live.deviceKcal - ride.kcalBase);
+    else if (live.power != null) ride.kcal += (live.power * dt) / 4184 / 0.24; // ~24% 인체 효율
+    else ride.kcal += estimateKcalPerSec(spd) * dt;
+
+    if (spd > 0) { ride.speedSum += spd; ride.speedN++; }
+    ride.samples.push([Math.round(ride.elapsed), +spd.toFixed(1), live.cadence ?? '', live.power ?? '', live.hr ?? '']);
+    render();
+  }, 1000);
+
+  function estimateKcalPerSec(kmh) {
+    // 대략적인 MET 기반 추정 (체중 70kg 가정)
+    const met = kmh <= 0 ? 0 : kmh < 16 ? 4 : kmh < 19 ? 6.8 : kmh < 22 ? 8 : 10;
+    return (met * 3.5 * 70 / 200) / 60;
+  }
+
+  // ---------- Render ----------
+  const fmtTime = (s) => {
+    s = Math.floor(s);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    const p = (n) => String(n).padStart(2, '0');
+    return h ? `${h}:${p(m)}:${p(x)}` : `${p(m)}:${p(x)}`;
+  };
+  const show = (v, d = 0) => (v == null || Number.isNaN(v) ? '–' : v.toFixed(d));
+  function render() {
+    $('vTime').textContent = fmtTime(ride.elapsed);
+    $('vSpeed').textContent = show(live.speed, 1);
+    $('vCad').textContent = show(live.cadence);
+    $('vPower').textContent = show(live.power);
+    $('vHr').textContent = show(live.hr);
+    $('vDist').textContent = (ride.distance / 1000).toFixed(2);
+    $('vKcal').textContent = Math.round(ride.kcal);
+    $('rLevel').textContent = show(live.resistance);
+  }
+
+  // ---------- History ----------
+  const KEY = 'bike.rides.v1';
+  const loadRides = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
+  const storeRides = (r) => { try { localStorage.setItem(KEY, JSON.stringify(r)); } catch {} };
+
+  function saveRide() {
+    const rides = loadRides();
+    rides.unshift({
+      date: new Date().toISOString(),
+      seconds: Math.round(ride.elapsed),
+      distance: Math.round(ride.distance),
+      avgSpeed: ride.speedN ? +(ride.speedSum / ride.speedN).toFixed(1) : 0,
+      kcal: Math.round(ride.kcal),
+      samples: ride.samples,
+    });
+    storeRides(rides);
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const rides = loadRides();
+    const tbody = $('historyTable').querySelector('tbody');
+    tbody.innerHTML = '';
+    $('historyEmpty').classList.toggle('hidden', rides.length > 0);
+    $('historyTable').classList.toggle('hidden', rides.length === 0);
+    rides.forEach((r, i) => {
+      const d = new Date(r.date);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</td>
+        <td>${fmtTime(r.seconds)}</td><td>${(r.distance / 1000).toFixed(2)}km</td>
+        <td>${r.avgSpeed}</td><td>${r.kcal}</td><td><button data-i="${i}" style="padding:4px 8px">✕</button></td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('button').forEach((b) => b.onclick = () => {
+      if (!confirm('이 기록을 삭제할까요?')) return;
+      const r = loadRides(); r.splice(+b.dataset.i, 1); storeRides(r); renderHistory();
+    });
+  }
+
+  $('btnCsv').onclick = () => {
+    const rides = loadRides();
+    if (!rides.length) return alert('기록이 없습니다.');
+    const lines = ['date,seconds,distance_m,avg_speed_kmh,kcal'];
+    rides.forEach((r) => lines.push([r.date, r.seconds, r.distance, r.avgSpeed, r.kcal].join(',')));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bike-rides-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  // ---------- Debug log ----------
+  $('btnCopyLog').onclick = async () => {
+    try { await navigator.clipboard.writeText(logEl.textContent); alert('복사했습니다.'); }
+    catch { const r = document.createRange(); r.selectNodeContents(logEl); getSelection().removeAllRanges(); getSelection().addRange(r); }
+  };
+  $('btnClearLog').onclick = () => { logEl.textContent = ''; };
+
+  // ---------- Wake lock (화면 꺼짐 방지) ----------
+  async function requestWakeLock() {
+    try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
+  }
+  function releaseWakeLock() { try { wakeLock?.release(); } catch {} wakeLock = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ride.state === 'running') requestWakeLock();
+  });
+
+  render();
+  renderHistory();
+  syncButtons();
+})();
+</script>
+</body>
+</html>
