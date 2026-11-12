@@ -54,6 +54,16 @@ final class HistoryStore: ObservableObject {
     }
 }
 
+enum SpeedCorrection {
+    static let key = "speedFactor"
+    static let defaultValue = 0.7
+    /// 자전거가 보내는 속도·거리에 곱하는 보정 비율
+    static var factor: Double {
+        let v = UserDefaults.standard.double(forKey: key)
+        return v > 0 ? v : defaultValue
+    }
+}
+
 final class RideSession: ObservableObject {
     enum State { case idle, running, paused }
 
@@ -65,6 +75,7 @@ final class RideSession: ObservableObject {
     private let ble: BLEManager
     private var timer: Timer?
     private var lastTick = Date()
+    private var rawDistance: Double = 0
     private var distBase: Int?
     private var kcalBase: Int?
     private var speedSum = 0.0, cadenceSum = 0.0, powerSum = 0.0
@@ -105,7 +116,7 @@ final class RideSession: ObservableObject {
     private func avg(_ s: Double, _ n: Int) -> Double { n > 0 ? s / Double(n) : 0 }
 
     private func reset() {
-        elapsed = 0; distance = 0; kcal = 0
+        elapsed = 0; distance = 0; rawDistance = 0; kcal = 0
         distBase = nil; kcalBase = nil
         speedSum = 0; cadenceSum = 0; powerSum = 0
         speedN = 0; cadenceN = 0; powerN = 0
@@ -122,12 +133,14 @@ final class RideSession: ObservableObject {
         let speed = live.speed ?? 0
 
         // 기기 누적값이 있으면 그 차이를, 없으면 속도·파워로 적분
+        let factor = SpeedCorrection.factor
         if let d = live.deviceDistance {
-            if distBase == nil { distBase = d - Int(distance) }
-            distance = Double(max(0, d - (distBase ?? d)))
+            if distBase == nil { distBase = d - Int(rawDistance) }
+            rawDistance = Double(max(0, d - (distBase ?? d)))
         } else {
-            distance += speed / 3.6 * dt
+            rawDistance += speed / 3.6 * dt
         }
+        distance = rawDistance * factor
         if let k = live.deviceKcal {
             if kcalBase == nil { kcalBase = k - Int(kcal) }
             kcal = Double(max(0, k - (kcalBase ?? k)))
@@ -137,7 +150,7 @@ final class RideSession: ObservableObject {
             kcal += Self.kcalPerSecond(speed: speed) * dt
         }
 
-        if speed > 0 { speedSum += speed; speedN += 1 }
+        if speed > 0 { speedSum += speed * factor; speedN += 1 }
         if let c = live.cadence, c > 0 { cadenceSum += c; cadenceN += 1 }
         if let p = live.power, p > 0 { powerSum += Double(p); powerN += 1 }
     }

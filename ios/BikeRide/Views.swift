@@ -12,6 +12,7 @@ struct DashboardView: View {
     @State private var showHistory = false
     @State private var showLog = false
     @State private var confirmFinish = false
+    @AppStorage(SpeedCorrection.key) private var speedFactor = SpeedCorrection.defaultValue
 
     var body: some View {
         NavigationStack {
@@ -22,7 +23,7 @@ struct DashboardView: View {
                     Tile(label: "운동 시간", value: formatTime(session.elapsed), unit: nil, big: true)
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        Tile(label: "속도", value: fmt(ble.live.speed, 1), unit: "km/h")
+                        Tile(label: "속도", value: fmt(ble.live.speed.map { $0 * speedFactor }, 1), unit: "km/h")
                         Tile(label: "케이던스", value: fmt(ble.live.cadence, 0), unit: "rpm")
                         Tile(label: "파워", value: fmt(ble.live.power.map { Double($0) }, 0), unit: "W")
                         Tile(label: "심박", value: fmt(ble.live.heartRate.map { Double($0) }, 0), unit: "bpm")
@@ -31,6 +32,8 @@ struct DashboardView: View {
                     }
 
                     controls
+
+                    speedCorrection
 
                     if ble.canControlResistance { resistance }
                 }
@@ -86,6 +89,29 @@ struct DashboardView: View {
                 BigButton(title: "종료", color: .red) { confirmFinish = true }
             }
         }
+    }
+
+    private var speedCorrection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("속도 보정").font(.subheadline).foregroundStyle(.secondary)
+            HStack {
+                Button { speedFactor = max(0.3, ((speedFactor - 0.05) * 100).rounded() / 100) } label: {
+                    Image(systemName: "minus").frame(width: 56, height: 44)
+                }.buttonStyle(.bordered)
+                Spacer()
+                Text(String(format: "×%.2f", speedFactor))
+                    .font(.system(size: 28, weight: .bold, design: .rounded)).monospacedDigit()
+                Spacer()
+                Button { speedFactor = min(1.5, ((speedFactor + 0.05) * 100).rounded() / 100) } label: {
+                    Image(systemName: "plus").frame(width: 56, height: 44)
+                }.buttonStyle(.bordered)
+            }
+            Text(ble.live.speed.map { String(format: "자전거 원래 속도 %.1f km/h · 거리도 같은 비율로 계산", $0) }
+                 ?? "자전거가 보내는 속도·거리에 이 비율을 곱합니다")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.06)))
     }
 
     private var resistance: some View {

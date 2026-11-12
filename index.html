@@ -83,6 +83,17 @@
   <button id="btnFinish" class="danger" disabled>종료·저장</button>
 </div>
 
+<section>
+  <h2>속도 보정</h2>
+  <p class="muted" style="margin:0 0 8px">자전거가 보내는 속도에 이 비율을 곱해서 보여줍니다. 거리도 같은 비율로 계산돼요.</p>
+  <div class="resist">
+    <button id="sfDown">−</button>
+    <div class="lv" id="sfValue">×1.00</div>
+    <button id="sfUp">+</button>
+    <span class="muted" id="sfRaw"></span>
+  </div>
+</section>
+
 <section id="resistBox" class="hidden">
   <h2>저항 조절</h2>
   <div class="resist">
@@ -173,13 +184,13 @@
   // ---------- State ----------
   const live = { speed: null, cadence: null, power: null, hr: null, resistance: null,
     deviceDistance: null, deviceKcal: null };
-  const ride = { state: 'idle', elapsed: 0, lastTick: 0, distance: 0, kcal: 0, speedSum: 0, speedN: 0,
+  const ride = { state: 'idle', elapsed: 0, lastTick: 0, distance: 0, rawDistance: 0, kcal: 0, speedSum: 0, speedN: 0,
     distBase: null, kcalBase: null, samples: [] };
   let device = null, server = null, ftmsCP = null, resRange = null, hasFtms = false;
   let csc = { crankRevs: null, crankTime: null, wheelRevs: null, wheelTime: null, lastCrankAt: 0 };
   let wakeLock = null;
   let rxCount = 0;
-  const VERSION = 'v4';
+  const VERSION = 'v5';
 
   if (!('bluetooth' in navigator)) {
     $('noBt').classList.remove('hidden');
@@ -407,6 +418,18 @@
   $('rUp').onclick = () => setResistance((live.resistance ?? 0) + (resRange?.step || 1));
   $('rDown').onclick = () => setResistance((live.resistance ?? 0) - (resRange?.step || 1));
 
+  // ---------- Speed correction ----------
+  const SF_KEY = 'bike.speedFactor.v1';
+  let speedFactor = 0.7;
+  try { const v = parseFloat(localStorage.getItem(SF_KEY)); if (v > 0) speedFactor = v; } catch {}
+  function setSpeedFactor(v) {
+    speedFactor = Math.round(Math.min(1.5, Math.max(0.3, v)) * 100) / 100;
+    try { localStorage.setItem(SF_KEY, String(speedFactor)); } catch {}
+    render();
+  }
+  $('sfUp').onclick = () => setSpeedFactor(speedFactor + 0.05);
+  $('sfDown').onclick = () => setSpeedFactor(speedFactor - 0.05);
+
   // ---------- Ride ----------
   $('btnStart').onclick = () => {
     if (ride.state === 'idle') resetRide();
@@ -432,7 +455,7 @@
 
   function resetRide() {
     Object.assign(ride, { elapsed: 0, distance: 0, kcal: 0, speedSum: 0, speedN: 0,
-      distBase: live.deviceDistance, kcalBase: live.deviceKcal, samples: [] });
+      rawDistance: 0, distBase: live.deviceDistance, kcalBase: live.deviceKcal, samples: [] });
   }
 
   function syncButtons() {
@@ -454,15 +477,16 @@
     const spd = live.speed ?? 0;
     // Prefer device-reported totals when available; else integrate.
     // 운동 시작 후 첫 데이터가 오면 기준값을 잡는다 (그 전까지 적분한 값은 유지)
-    if (ride.distBase == null && live.deviceDistance != null) ride.distBase = live.deviceDistance - ride.distance;
+    if (ride.distBase == null && live.deviceDistance != null) ride.distBase = live.deviceDistance - ride.rawDistance;
     if (ride.kcalBase == null && live.deviceKcal != null) ride.kcalBase = live.deviceKcal - ride.kcal;
-    if (live.deviceDistance != null && ride.distBase != null) ride.distance = Math.max(0, live.deviceDistance - ride.distBase);
-    else ride.distance += (spd / 3.6) * dt;
+    if (live.deviceDistance != null && ride.distBase != null) ride.rawDistance = Math.max(0, live.deviceDistance - ride.distBase);
+    else ride.rawDistance += (spd / 3.6) * dt;
+    ride.distance = ride.rawDistance * speedFactor;   // 속도 보정 비율을 거리에도 적용
     if (live.deviceKcal != null && ride.kcalBase != null) ride.kcal = Math.max(0, live.deviceKcal - ride.kcalBase);
     else if (live.power != null) ride.kcal += (live.power * dt) / 4184 / 0.24; // ~24% 인체 효율
     else ride.kcal += estimateKcalPerSec(spd) * dt;
 
-    if (spd > 0) { ride.speedSum += spd; ride.speedN++; }
+    if (spd > 0) { ride.speedSum += spd * speedFactor; ride.speedN++; }
     ride.samples.push([Math.round(ride.elapsed), +spd.toFixed(1), live.cadence ?? '', live.power ?? '', live.hr ?? '']);
     render();
   }, 1000);
@@ -483,13 +507,15 @@
   const show = (v, d = 0) => (v == null || Number.isNaN(v) ? '–' : v.toFixed(d));
   function render() {
     $('vTime').textContent = fmtTime(ride.elapsed);
-    $('vSpeed').textContent = show(live.speed, 1);
+    $('vSpeed').textContent = show(live.speed == null ? null : live.speed * speedFactor, 1);
     $('vCad').textContent = show(live.cadence);
     $('vPower').textContent = show(live.power);
     $('vHr').textContent = show(live.hr);
     $('vDist').textContent = (ride.distance / 1000).toFixed(2);
     $('vKcal').textContent = Math.round(ride.kcal);
     $('rLevel').textContent = show(live.resistance);
+    $('sfValue').textContent = '×' + speedFactor.toFixed(2);
+    $('sfRaw').textContent = live.speed != null ? `원래 ${live.speed.toFixed(1)}km/h` : '';
   }
 
   // ---------- History ----------
