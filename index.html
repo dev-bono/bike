@@ -138,7 +138,14 @@
     '49535343-fe7d-4ae5-8fa9-9fafd205e455',
   ];
   const STANDARD_SVCS = [SVC.FTMS, SVC.CSC, SVC.CPS, SVC.HR, SVC.DIS, SVC.BAT];
-  const canon = (u) => (typeof u === 'number' ? '0000' + u.toString(16).padStart(4, '0') + '-0000-1000-8000-00805f9b34fb' : u.toLowerCase());
+  // 브라우저마다 UUID 표기가 다름 (Chrome: 128비트 소문자, Bluefy: '2AD2' 같은 16비트 대문자)
+  const canon = (u) => {
+    if (typeof u === 'number') u = u.toString(16);
+    u = String(u).trim().toLowerCase().replace(/^0x/, '');
+    if (/^[0-9a-f]{4}$/.test(u)) u = '0000' + u;
+    if (/^[0-9a-f]{8}$/.test(u)) u += '-0000-1000-8000-00805f9b34fb';
+    return u;
+  };
   const uniq = (a) => [...new Set(a.map(canon))];
   // 브라우저마다 지원 범위가 달라서, 실패하면 다음 버튼 누를 때 다른 설정으로 시도
   const SCAN_MODES = [
@@ -161,7 +168,7 @@
   }
   const hex = (dv) => [...new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)]
     .map((b) => b.toString(16).padStart(2, '0')).join(' ');
-  const shortUuid = (u) => /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/.test(u) ? '0x' + u.slice(4, 8) : u;
+  const shortUuid = (u) => { u = canon(u); return /^0000[0-9a-f]{4}-0000-1000-8000-00805f9b34fb$/.test(u) ? '0x' + u.slice(4, 8) : u; };
 
   // ---------- State ----------
   const live = { speed: null, cadence: null, power: null, hr: null, resistance: null,
@@ -248,7 +255,7 @@
   }
 
   async function hookCharacteristic(s, c) {
-    const su = s.uuid, cu = c.uuid, p = c.properties;
+    const su = canon(s.uuid), cu = canon(c.uuid), p = c.properties;
     const is = (svc, chr) => su === U(svc) && cu === U(chr);
 
     if (p.read && (su === U(SVC.DIS) || su === U(SVC.BAT) || is(SVC.FTMS, CHR.RES_RANGE))) {
@@ -289,7 +296,7 @@
     c.addEventListener('characteristicvaluechanged', (e) => {
       const dv = e.target.value;
       if (handler) { try { handler(dv); } catch (err) { log(`파싱 오류 ${tag}: ${err.message}`); } }
-      if (!handler || $('dbg').open) log(`${tag} ⇐ ${hex(dv)}`);
+      if ($('dbg').open) log(`${tag} ⇐ ${hex(dv)}`);
     });
     try { await c.startNotifications(); log(`   구독 시작 ${tag}`); }
     catch (e) { log(`   구독 실패 ${tag}: ${e.message}`); }
@@ -440,6 +447,9 @@
 
     const spd = live.speed ?? 0;
     // Prefer device-reported totals when available; else integrate.
+    // 운동 시작 후 첫 데이터가 오면 기준값을 잡는다 (그 전까지 적분한 값은 유지)
+    if (ride.distBase == null && live.deviceDistance != null) ride.distBase = live.deviceDistance - ride.distance;
+    if (ride.kcalBase == null && live.deviceKcal != null) ride.kcalBase = live.deviceKcal - ride.kcal;
     if (live.deviceDistance != null && ride.distBase != null) ride.distance = Math.max(0, live.deviceDistance - ride.distBase);
     else ride.distance += (spd / 3.6) * dt;
     if (live.deviceKcal != null && ride.kcalBase != null) ride.kcal = Math.max(0, live.deviceKcal - ride.kcalBase);
