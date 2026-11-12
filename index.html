@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🚴 Bike Ride</h1>
+  <h1>🚴 Bike Ride <span id="ver" style="font-size:12px;color:var(--muted);font-weight:500"></span></h1>
   <div class="status"><span id="dot" class="dot"></span><span id="statusText">연결 안 됨</span></div>
 </header>
 
@@ -178,6 +178,8 @@
   let device = null, server = null, ftmsCP = null, resRange = null, hasFtms = false;
   let csc = { crankRevs: null, crankTime: null, wheelRevs: null, wheelTime: null, lastCrankAt: 0 };
   let wakeLock = null;
+  let rxCount = 0;
+  const VERSION = 'v4';
 
   if (!('bluetooth' in navigator)) {
     $('noBt').classList.remove('hidden');
@@ -196,7 +198,7 @@
   let envLogged = false;
   async function logEnv() {
     if (envLogged) return; envLogged = true;
-    log('UA: ' + navigator.userAgent);
+    log('앱 버전 ' + VERSION + ' / UA: ' + navigator.userAgent);
     try { log('블루투스 사용 가능: ' + (await navigator.bluetooth.getAvailability?.())); } catch (e) { log('getAvailability 오류: ' + errText(e)); }
   }
 
@@ -256,7 +258,8 @@
 
   async function hookCharacteristic(s, c) {
     const su = canon(s.uuid), cu = canon(c.uuid), p = c.properties;
-    const is = (svc, chr) => su === U(svc) && cu === U(chr);
+    // 특성 UUID만으로 판별 (표준 특성 UUID는 고유함). 서비스 UUID 표기가 브라우저마다 달라도 동작하도록.
+    const is = (svc, chr) => cu === U(chr);
 
     if (p.read && (su === U(SVC.DIS) || su === U(SVC.BAT) || is(SVC.FTMS, CHR.RES_RANGE))) {
       try {
@@ -292,9 +295,12 @@
     else if (is(SVC.HR, CHR.HR_MEAS)) handler = parseHR;
     else if (is(SVC.FTMS, CHR.FTMS_STATUS)) handler = (dv) => log(`FTMS 상태 ${hex(dv)}`);
 
-    const tag = shortUuid(cu);
+    const tag = shortUuid(cu) + (handler ? '✓' : '');
+    log(`   원본 UUID: 서비스 "${s.uuid}", 특성 "${c.uuid}" → ${handler ? '해석함' : '해석 안 함'}`);
     c.addEventListener('characteristicvaluechanged', (e) => {
-      const dv = e.target.value;
+      const dv = (e && e.target && e.target.value) || c.value;
+      if (!dv) return;
+      rxCount++;
       if (handler) { try { handler(dv); } catch (err) { log(`파싱 오류 ${tag}: ${err.message}`); } }
       if ($('dbg').open) log(`${tag} ⇐ ${hex(dv)}`);
     });
@@ -554,6 +560,7 @@
     if (document.visibilityState === 'visible' && ride.state === 'running') requestWakeLock();
   });
 
+  $('ver').textContent = VERSION;
   render();
   renderHistory();
   syncButtons();
