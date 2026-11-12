@@ -1,0 +1,4 @@
+ios/*.xcodeproj/
+ios/BikeRide/Info.plist
+.DS_Store
+build/
