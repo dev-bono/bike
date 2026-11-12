@@ -123,7 +123,7 @@
   'use strict';
 
   // ---------- BLE UUIDs ----------
-  const U = (n) => (typeof n === 'number' ? BluetoothUUID.canonicalUUID(n) : n);
+  const U = (n) => canon(n);
   const SVC = {
     FTMS: 0x1826, CSC: 0x1816, CPS: 0x1818, HR: 0x180d, DIS: 0x180a, BAT: 0x180f,
   };
@@ -133,12 +133,22 @@
   };
   // Common vendor services on Chinese fitness equipment (FitShow etc.), Nordic UART, ISSC, HM-10...
   const VENDOR_SVCS = [
-    0xfff0, 0xffe0, 0xfee7, 0xfe00, 0xfff1, 0xffc0, 0xfd00,
+    0xfff0, 0xffe0, 0xfee7, 0xfe00, 0xffc0, 0xfd00,
     '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
     '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-    '0000fff0-0000-1000-8000-00805f9b34fb',
   ];
-  const OPTIONAL = [SVC.FTMS, SVC.CSC, SVC.CPS, SVC.HR, SVC.DIS, SVC.BAT, ...VENDOR_SVCS];
+  const STANDARD_SVCS = [SVC.FTMS, SVC.CSC, SVC.CPS, SVC.HR, SVC.DIS, SVC.BAT];
+  const canon = (u) => (typeof u === 'number' ? '0000' + u.toString(16).padStart(4, '0') + '-0000-1000-8000-00805f9b34fb' : u.toLowerCase());
+  const uniq = (a) => [...new Set(a.map(canon))];
+  // 브라우저마다 지원 범위가 달라서, 실패하면 다음 버튼 누를 때 다른 설정으로 시도
+  const SCAN_MODES = [
+    { name: '전체 기기 + 전체 서비스', opts: () => ({ acceptAllDevices: true, optionalServices: uniq([...STANDARD_SVCS, ...VENDOR_SVCS]) }) },
+    { name: '전체 기기 + 표준 서비스', opts: () => ({ acceptAllDevices: true, optionalServices: uniq(STANDARD_SVCS) }) },
+    { name: '전체 기기(옵션 없음)', opts: () => ({ acceptAllDevices: true }) },
+    { name: 'FTMS/CSC 필터', opts: () => ({ filters: [{ services: [canon(SVC.FTMS)] }, { services: [canon(SVC.CSC)] }], optionalServices: uniq(STANDARD_SVCS) }) },
+    { name: '이름 필터', opts: () => ({ filters: ['FS', 'KS', 'ES', 'EX', 'BIKE', 'Bike'].map((p) => ({ namePrefix: p })), optionalServices: uniq([...STANDARD_SVCS, ...VENDOR_SVCS]) }) },
+  ];
+  let scanMode = 0;
 
   // ---------- DOM ----------
   const $ = (id) => document.getElementById(id);
@@ -168,16 +178,47 @@
   }
 
   // ---------- Connect ----------
+  const errText = (e) => {
+    if (e == null) return String(e);
+    if (typeof e === 'string') return e;
+    const parts = [e.name, e.message, e.code != null ? 'code=' + e.code : ''].filter(Boolean);
+    if (parts.length) return parts.join(' / ');
+    try { return JSON.stringify(e) || String(e); } catch { return String(e); }
+  };
+
+  let envLogged = false;
+  async function logEnv() {
+    if (envLogged) return; envLogged = true;
+    log('UA: ' + navigator.userAgent);
+    try { log('블루투스 사용 가능: ' + (await navigator.bluetooth.getAvailability?.())); } catch (e) { log('getAvailability 오류: ' + errText(e)); }
+  }
+
+  let scanning = false;
   $('btnConnect').onclick = async () => {
+    if (scanning) return;
+    scanning = true;
+    $('btnConnect').disabled = true;
+    const mode = SCAN_MODES[scanMode];
     try {
       setStatus('기기 검색 중…');
-      device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OPTIONAL });
+      $('dbg').open = true;
+      await logEnv();
+      log(`검색 방식 ${scanMode + 1}/${SCAN_MODES.length}: ${mode.name}`);
+      device = await navigator.bluetooth.requestDevice(mode.opts());
       device.addEventListener('gattserverdisconnected', onDisconnected);
       log(`선택: ${device.name || '(이름 없음)'} id=${device.id}`);
       await connect();
     } catch (e) {
-      log('연결 실패: ' + e.message);
+      log('연결 실패: ' + errText(e));
       setStatus('연결 안 됨');
+      $('btnConnect').disabled = false;
+      const cancelled = e && (e.name === 'NotFoundError' || /cancel/i.test(errText(e)));
+      if (!cancelled) {
+        scanMode = (scanMode + 1) % SCAN_MODES.length;
+        log(`→ 다음엔 '${SCAN_MODES[scanMode].name}' 방식으로 시도합니다. 연결 버튼을 다시 눌러주세요.`);
+      }
+    } finally {
+      scanning = false;
     }
   };
   $('btnDisconnect').onclick = () => { if (device?.gatt.connected) device.gatt.disconnect(); };
